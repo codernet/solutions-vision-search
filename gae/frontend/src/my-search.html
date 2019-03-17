@@ -72,7 +72,12 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
       }
 
     </style>
-
+    <div id="image-upload">
+      <form id="upload-form" action="/uploader" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept="image/*" />
+        <input type="submit"/>
+      </form>
+    </div>
     <div id="search-panel">
       <iron-form id="search-iron-form">
         <form id="search-form" method="get">
@@ -158,6 +163,8 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
         // Handle API response from search backend and update Polymer properties
         this.images = e.detail.response.documents;
         this.facets = e.detail.response.facets;
+        console.log(this.images)
+        console.log(this.facets)
       }
 
       _preview(e) {

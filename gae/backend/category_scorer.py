@@ -59,16 +59,18 @@ def category_from_fixed_mappings(labels):
   # Iterate through labels
   for label in labels:
     for k, v in category_map['categorymaps'].iteritems():
-      if label['description'] in v:
+      if label['description'].lower() in v:
         if k in category_scores.keys():
           category_scores[k] += label['score']
         else:
           category_scores[k] = label['score']
 
   num_category_scores = len(category_scores)
+  logging.info('category scores: %s', num_category_scores)
   if num_category_scores > 0:
     sorted_scores = sorted([(v, k) for (k, v) in category_scores.iteritems()],
                            reverse=True)
+    logging.info('sorted scores: %s', sorted_scores)
     category_tuple = sorted_scores[0]
     if category_tuple[0] > 0:
       top_category = category_tuple[1]

@@ -13,20 +13,24 @@
 # limitations under the License.
 
 import base64
+import cloudstorage as gcs
 import json
 import logging
 import os
 
 from category_scorer import category_from_fixed_mappings
 from category_scorer import category_from_similar_vectors
-from flask import current_app, Flask, request, abort, jsonify, make_response
+from flask import current_app, Flask, request, abort, jsonify, make_response, redirect
 from flask_hashing import Hashing
 from functools32 import lru_cache
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
+from time import sleep
 
+from google.appengine.api import app_identity
 from google.appengine.api import images
 from google.appengine.api import search
+
 
 app = Flask(__name__)
 
@@ -81,9 +85,13 @@ def pubsub_push():
     labels = detect_labels(bucket_id, object_id)
     num_detected_labels = len(labels)
 
+    logging.info('detected labels: %s', labels)
+
     if num_detected_labels > 0:
       # Get the top category from fixed category mappings
       mapped_category = category_from_fixed_mappings(labels)
+
+      logging.info('mapped category: %s', mapped_category)
 
       if current_app.config['USE_CATEGORY_PREDICTOR'] == 'True':
         # Use ML Engine to calculate and return most similar category
@@ -143,7 +151,8 @@ def query():
                                              'mapped_category_facet',
                                              'most_similar_category_facet'],
                               facet_refinements=facet_refinements,
-                              options=search_options)
+                              options=search_options,
+                              enable_facet_discovery=True)
 
   search_results = index.search(search_query)
 
@@ -185,10 +194,15 @@ def query():
   if num_matched_facets > 0:
     response_dict['facets'] = matched_facets
 
+  logging.info('resp docs: %s', str(matched_docs))
+  logging.info('resp facets: %s', str(matched_facets))
+
   response_dict['result'] = 'ok'
 
   resp = make_response(jsonify(response_dict))
   resp.headers['Access-Control-Allow-Origin'] = '*'
+
+  logging.info('resp: %s', str(resp))
 
   return resp
 
@@ -204,6 +218,31 @@ def delete():
 
   except search.DeleteError:
     logging.exception('Something went wrong in delete()')
+
+  return jsonify(response_dict)
+
+
+@app.route('/deleteall', methods=['GET'])
+def delete_all():
+  """Deletes all documents from the index."""
+  try:
+    response_dict = {}
+    index = search.Index(name='imagesearch')
+    while True:
+      document_ids = [document.doc_id
+      for document
+      in index.get_range(ids_only=True)]
+
+      if not document_ids:
+        break
+
+      index.delete(document_ids)
+
+    index.delete_schema()
+    response_dict['result'] = 'ok'
+
+  except search.DeleteError:
+    logging.exception('Something went wrong in delete_all()')
 
   return jsonify(response_dict)
 
@@ -295,6 +334,9 @@ def add_to_search_index(object_id, labels, metadata, mapped_category=None,
     for k, v in metadata.iteritems():
       fields.append(search.TextField(name=k, value=v))
 
+    logging.info('add fields: %s', str(fields))
+    logging.info('add facets: %s', str(facets))
+
     # Add the document to the search index
     d = search.Document(doc_id=hashing.hash_value(object_id),
                         fields=fields,
@@ -310,17 +352,53 @@ def add_to_search_index(object_id, labels, metadata, mapped_category=None,
 
 def get_image_url(bucket_id, object_id, size):
   """Gets a serving URL for an uploaded image."""
-  try:
-    url = ''
-    filename = '/gs/{}/{}'.format(bucket_id, object_id)
-    url = images.get_serving_url(None,
-                                 filename=filename,
-                                 secure_url=True,
-                                 size=size)
-    return url
+  for x in range(0, 4):
+    try:
+      url = ''
+      filename = '/gs/{}/{}'.format(bucket_id, object_id)
+      logging.info('image filename: %s', filename)
+      url = images.get_serving_url(None,
+                                   filename=filename,
+                                   secure_url=True,
+                                   size=size)
+      return url
 
-  except images.Error:
-    logging.exception('Something went wrong in get_image_url()')
+    except images.Error:
+      logging.exception('Something went wrong in get_image_url()')
+
+
+def get_bucket_name():
+  prj_id = app_identity.get_application_id()
+  return prj_id + '-images'
+
+
+def write_image_file(bucket_name, file_name, image_file):
+  filename = '/' + bucket_name + '/' + file_name
+  write_retry_params = gcs.RetryParams(backoff_factor=1.1)
+  gcs_file = gcs.open(filename,
+                      'w',
+                      content_type='binary/octet-stream',
+                      retry_params=write_retry_params)
+  gcs_file.write(image_file)
+  gcs_file.close()
+
+
+@app.route('/uploader', methods=['POST'])
+def upload_file():
+  logging.info('upload %s', request)
+  logging.info('upload form %s', request.form.to_dict())
+  logging.info('upload f %s', request.files.to_dict())
+  logging.info('upload data %s', request.get_data())
+  f = request.files['file']
+  bucket_name = get_bucket_name()
+  logging.info('upload file %s, bucket %s', f.filename, bucket_name)
+  write_image_file(bucket_name, f.filename, f.read())
+
+  logging.info('request base_url: %s', request.base_url)
+  index = request.base_url.rfind('/')
+  url = request.base_url[:index]
+  logging.info('redirect url: %s', url)
+  return redirect(url)
 
 
 @app.errorhandler(500)

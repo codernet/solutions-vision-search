@@ -1,0 +1,4 @@
+.DS_Store
+gae/backend/lib/
+gae/frontend/bower_components/
+gae/frontend/build/
