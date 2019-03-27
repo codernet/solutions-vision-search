@@ -7,10 +7,46 @@ import CSSTransitionGroup from "react-transition-group/CSSTransitionGroup";
 class Products extends Component {
   constructor() {
     super();
+    this.state = {
+      error: null,
+      isLoaded: false,
+      images: [],
+      facets: []
+    }
   }
+
+  componentDidMount() {
+    fetch("https://driven-stage-181109.appspot.com/query")
+      .then(res => res.json())
+      .then(
+        (result) => {
+          this.setState({
+            isLoaded: true,
+            images: result.documents,
+            facets: result.facets
+          });
+        },
+        // Note: it's important to handle errors here
+        // instead of a catch() block so that we don't swallow
+        // exceptions from actual bugs in components.
+        (error) => {
+          this.setState({
+            isLoaded: true,
+            error
+          });
+        }
+      )
+  }
+
   render() {
+    const {error, isLoaded, items } = this.state;
+    if (error) {
+      return (<div>Error: {error.message}</div>);
+    } else if (!isLoaded) {
+      return (<div>Loading...</div>);
+    }
     let productsData;
-    let term = this.props.searchTerm;
+    //let term = this.props.searchTerm;
     let x;
 
     function searchingFor(term) {
@@ -18,6 +54,7 @@ class Products extends Component {
         return x.name.toLowerCase().includes(term.toLowerCase()) || !term;
       };
     }
+    /*
     productsData = this.props.productsList
       .filter(searchingFor(term))
       .map(product => {
@@ -31,7 +68,20 @@ class Products extends Component {
           />
         );
       });
-
+      */
+    productsData = this.state.images
+      .map(product => {
+        return (
+          <Product
+            key={product.doc_id}
+            name={product["fields"]["image_id"][0]}
+            image={product["fields"]["preview_url"][0]}
+            id={product["doc_id"]}
+            label={product.fields.label}
+            openModal={this.props.openModal}
+          />
+          );
+      });
     // Empty and Loading States
     let view;
     if (productsData.length <= 0 && !term) {

@@ -27,6 +27,8 @@ class Product extends Component {
     let image = this.props.image;
     let name = this.props.name;
     let id = this.props.id;
+    let label = this.props.label;
+    let labelJoin = label.join(", ");
     return (
       <div className="product">
         <div className="product-image">
@@ -36,11 +38,13 @@ class Product extends Component {
             onClick={this.quickView.bind(
               this,
               image,
+              name,
               id
             )}
           />
         </div>
         <h4 className="product-name">{this.props.name}</h4>
+        <h5 className="product-name">{labelJoin}</h5>
       </div>
     );
   }
